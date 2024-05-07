@@ -1,3 +1,67 @@
+diff --git a/ggml-backend.c b/ggml-backend.c
+index e91d97cd..39d4efec 100644
+--- a/ggml-backend.c
++++ b/ggml-backend.c
+@@ -445,6 +445,11 @@ GGML_CALL static void ggml_backend_registry_init(void) {
+     extern GGML_CALL void ggml_backend_kompute_reg_devices(void);
+     ggml_backend_kompute_reg_devices();
+ #endif
++
++#ifdef GGML_USE_QNN
++    extern GGML_CALL void ggml_backend_qnn_reg_devices(void);
++    ggml_backend_qnn_reg_devices();
++#endif
+ }
+ 
+ GGML_CALL void ggml_backend_register(const char * name, ggml_backend_init_fn init_fn, ggml_backend_buffer_type_t default_buffer_type, void * user_data) {
+diff --git a/llama.cpp b/llama.cpp
+index a25d115c..7dedb2a1 100644
+--- a/llama.cpp
++++ b/llama.cpp
+@@ -17,6 +17,8 @@
+ #  include "ggml-sycl.h"
+ #elif defined(GGML_USE_KOMPUTE)
+ #   include "ggml-kompute.h"
++#elif defined(GGML_USE_QNN)
++#   include "ggml-qnn.h"
+ #endif
+ 
+ #ifdef GGML_USE_METAL
+@@ -1658,6 +1660,8 @@ static ggml_backend_buffer_type_t llama_default_buffer_type_offload(int gpu) {
+     buft = ggml_backend_opencl_buffer_type();
+ #elif defined(GGML_USE_KOMPUTE)
+     buft = ggml_backend_kompute_buffer_type(gpu);
++#elif defined(GGML_USE_QNN)
++    buft = ggml_backend_qnn_buffer_type(gpu);
+     if (buft == nullptr) {
+         LLAMA_LOG_WARN("%s: cannot use GPU %d, check `vulkaninfo --summary`\n", __func__, gpu);
+     }
+@@ -14916,7 +14920,7 @@ bool llama_supports_mlock(void) {
+ 
+ bool llama_supports_gpu_offload(void) {
+ #if defined(GGML_USE_CUDA) || defined(GGML_USE_CLBLAST) || defined(GGML_USE_METAL) || defined(GGML_USE_VULKAN) || \
+-    defined(GGML_USE_SYCL) || defined(GGML_USE_KOMPUTE)
++    defined(GGML_USE_SYCL) || defined(GGML_USE_KOMPUTE) || defined(GGML_USE_QNN)
+     // Defined when llama.cpp is compiled with support for offloading model layers to GPU.
+     return true;
+ #else
+@@ -15143,6 +15147,16 @@ struct llama_context * llama_new_context_with_model(
+                 ctx->backends.push_back(backend);
+             }
+         }
++#elif defined(GGML_USE_QNN)
++        if (model->n_gpu_layers > 0) {
++            auto * backend = ggml_backend_qnn_init(model->main_gpu);
++            if (backend == nullptr) {
++                LLAMA_LOG_ERROR("%s: failed to initialize Kompute backend\n", __func__);
++                llama_free(ctx);
++                return nullptr;
++            }
++            ctx->backends.push_back(backend);
++        }
+ #elif defined(GGML_USE_VULKAN)
+         if (model->split_mode == LLAMA_SPLIT_MODE_ROW) {
+             LLAMA_LOG_ERROR("%s: Row split not supported. Failed to initialize Vulkan backend\n", __func__);
 diff --git a/ggml-vulkan.cpp b/ggml-vulkan.cpp
 index 1736ab73..55831936 100644
 --- a/ggml-vulkan.cpp

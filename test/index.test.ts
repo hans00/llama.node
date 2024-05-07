@@ -4,7 +4,7 @@ import { loadModel } from '../lib'
 
 it('work fine', async () => {
   let tokens = ''
-  const model = await loadModel({ model: path.resolve(__dirname, './tiny-random-llama.gguf') })
+  const model = await loadModel({ model: path.resolve(__dirname, './tiny-random-llama.gguf'), n_gpu_layers: 0 })
   const result = await model.completion({
     prompt: 'My name is Merve and my favorite',
     n_samples: 1,
